@@ -5,19 +5,28 @@ import numpy as np
 
 GPIO.setmode(GPIO.BCM)
 #Setting up the GPIO pins
-IN_pin = 23
-GPIO.setup(IN_pin, GPIO.IN)
+IN1_pin = 4
+IN2_pin = 21
+GPIO.setup(IN1_pin, GPIO.IN)
+GPIO.setup(IN2_pin, GPIO.IN)
 
 #initialize the encodrer state
-counter=0
-IN_state= GPIO.input(IN_pin)
+counter1=0
+counter2=0
+IN1_state= GPIO.input(IN1_pin)
+IN2_state= GPIO.input(IN2_pin)
 
 #Define the callback function
-def on_encoder(channel):
-    global counter
-    counter+=1
+def on_encoder1(channel1):
+    global counter1
+    counter1+=1
     
-GPIO.add_event_detect(IN_pin, GPIO.RISING, callback=on_encoder)
+def on_encoder2(channel2):
+    global counter2
+    counter2+=1
+    
+GPIO.add_event_detect(IN1_pin, GPIO.RISING, callback=on_encoder1)
+GPIO.add_event_detect(IN2_pin, GPIO.RISING, callback=on_encoder2)
 
 class Motor():
     def __init__(self, EnA, In1, In2):
@@ -47,81 +56,145 @@ class Motor():
         time.sleep(t)
 
 #Setting up the PID gains
-kp=0.05
-ki=0.01
+kp=6
+ki=2
 kd=0
 dt=0.1
 
-inte=0
-preve=0
+inte1=inte2=0
+preve1=preve2=0
 
 V_max =6
-RPM_t=[]
+RPM1_t=[]
+RPM2_t=[]
 
-M= Motor(13, 19, 26)
-RPM_d= 400
-OUT=0
-x_t= list(range(25))
+M1= Motor(13, 19, 26)
+M2= Motor(18, 16, 20)
 
-def PID_control(RPM_d, RPM, kp, ki, kd):
-    global inte, preve
+RPM1_d= RPM2_d= 600
+
+OUT1=OUT2=0
+
+duty_cycle1=duty_cycle2=0
+
+def PID_control1(RPM_d, RPM, kp, ki, kd):
+    global inte1, preve1
     
     e= RPM_d-RPM
-    inte+=e*dt
-    deve=(e-preve)/dt
+    e_r=e/60
+    inte1+=e_r*dt
+    deve=(e_r-preve1)/dt
     
-    output= kp*e + ki*inte + kd*deve
+    output= kp*e_r + ki*inte1 + kd*deve
     
-    preve=deve
+    preve1=deve
+    
+    if output <0:
+        output= max(-6,output)
+    if output >0:
+        output= min(6,output)
     
     return output
 
-def calcul_RPM():
-    global counter, RPM_t
+def PID_control2(RPM_d, RPM, kp, ki, kd):
+    global inte2, preve2
+    
+    e= RPM_d-RPM
+    e_r=e/60
+    inte2+=e_r*dt
+    deve=(e_r-preve2)/dt
+    
+    output= kp*e_r + ki*inte2 + kd*deve
+    
+    preve2=deve
+    
+    if output <0:
+        output= max(-6,output)
+    if output >0:
+        output= min(6,output)
+        
+    return output
+
+def calcul_RPM1():
+    global counter1, RPM1_t
     dt1=0
     prev_time=time.time()
     while dt1 < 1:
         dt1= time.time()-prev_time
-    RPM= counter/20*60
-    RPM_t.append(RPM)
+    RPM1= counter1/20*60
+    RPM1_t.append(RPM1)
     prev_time=time.time()  
-    print(RPM)
-    counter =0
-    return RPM
+    counter1 =0
+    return RPM1
 
-def Motor_drive(output):
-    duty_cycle= min(100,abs(output)/V_max*100)
+def calcul_RPM2():
+    global counter2, RPM2_t
+    dt2=0
+    prev_time=time.time()
+    while dt2 < 1:
+        dt2= time.time()-prev_time
+    RPM2= counter2/20*60
+    RPM2_t.append(RPM2)
+    prev_time=time.time()  
+    counter2 =0
+    return RPM2
+
+def Motor_drive1(output):
+    global duty_cycle1
+    duty_cycle1= min(100,abs(output)/V_max*100)
     if output > 0:
-        M.moveF(duty_cycle)
-    else:
-        M.moveB(duty_cycle)
+        M1.moveF(duty_cycle1)
+    if output< 0:
+        M1.moveB(duty_cycle1)
+        
+        
+def Motor_drive2(output):
+    global duty_cycle2
+    duty_cycle2= min(100,abs(output)/V_max*100)
+    if output > 0:
+        M2.moveF(duty_cycle2)
+    if output < 0:
+        M2.moveB(duty_cycle2)
         
 #Defining the motor functions
 i=0
-OUT_t=[]
+OUT1_t=[]
+OUT2_t=[]
 try:
     while i<25:
-        RPM =  calcul_RPM()   
-        OUT= PID_control(RPM_d,RPM, kp, ki, kd)
-        OUT_t.append(OUT)
-        Motor_drive(OUT)
+        RPM1 =  calcul_RPM1()
+        RPM2 =  calcul_RPM2()
+        
+        OUT1= PID_control1(RPM1_d,RPM1, kp, ki, kd)
+        OUT2= PID_control2(RPM2_d,RPM2, kp, ki, kd)
+        
+        OUT1_t.append(OUT1)
+        OUT2_t.append(OUT2)
+        
+        Motor_drive1(OUT1)
+        Motor_drive2(OUT2)
+        
         #duty_cycle= max(0,min(100,abs(OUT)/V_max*100))
        # M.pwm.ChangeDutyCycle(duty_cycle)
-        print("{:<5} {:<5} {:<5}".format(RPM_d, RPM,OUT))
+        print("{:<5} {:<5} {:<5} {:<5} {:<5} {:<5}".format(duty_cycle1, RPM1,OUT1, duty_cycle2, RPM2,OUT2))
+        
         time.sleep(dt)
         i+=1
        
     
 finally:
     #plt.subplot(121)
-    plt.ylabel('rpm')
-    plt.plot( RPM_t)
-   # plt.subplot(122)
+    #plt.subplot(122)
     #plt.ylabel('OUT')
     #plt.plot(OUT_t)
-    plt.show()
-    M.stop()
-    GPIO.cleanup()
-       
     
+    M1.stop()
+    M2.stop()
+    GPIO.cleanup()
+    
+    plt.subplot(121)
+    plt.plot( RPM1_t)
+    plt.subplot(122)
+    plt.plot( RPM2_t)   
+    plt.show()
         
