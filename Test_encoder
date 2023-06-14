@@ -1,0 +1,41 @@
+import RPi.GPIO as GPIO
+import time
+ 
+GPIO.setmode(GPIO.BCM)
+
+#Setting up the GPIO pins
+IN_pin = 23
+GPIO.setup(IN_pin, GPIO.IN)
+
+#initialize the encodrer state
+counter=0
+IN_state= GPIO.input(IN_pin)
+
+#Define the callback function
+def on_encoder(channel):
+    global counter
+    counter+=1
+    
+GPIO.add_event_detect(IN_pin, GPIO.RISING, callback=on_encoder)
+
+RPM=[]
+try:
+    
+    while True:
+        
+        
+        
+        dt=0
+        prev_time=time.time()
+        while dt < 1:
+            dt= time.time()-prev_time
+                
+        cal = counter/20*60
+        RPM.append(cal)
+        prev_time=time.time()  
+        print(RPM)
+        counter=0
+            
+finally:
+    GPIO.cleanup()
+
