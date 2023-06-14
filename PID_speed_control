@@ -1,0 +1,127 @@
+import RPi.GPIO as GPIO
+import time
+import matplotlib.pyplot as plt
+import numpy as np
+
+GPIO.setmode(GPIO.BCM)
+#Setting up the GPIO pins
+IN_pin = 23
+GPIO.setup(IN_pin, GPIO.IN)
+
+#initialize the encodrer state
+counter=0
+IN_state= GPIO.input(IN_pin)
+
+#Define the callback function
+def on_encoder(channel):
+    global counter
+    counter+=1
+    
+GPIO.add_event_detect(IN_pin, GPIO.RISING, callback=on_encoder)
+
+class Motor():
+    def __init__(self, EnA, In1, In2):
+        self.EnA= EnA
+        self.In1= In1
+        self.In2= In2
+        GPIO.setup(self.EnA, GPIO.OUT)
+        GPIO.setup(self.In1, GPIO.OUT)
+        GPIO.setup(self.In2, GPIO.OUT)
+        self.pwm= GPIO.PWM(EnA, 100)
+        self.pwm.start(0)
+    
+    def moveF(self, x=50, t=0):
+        GPIO.output(self.In1, GPIO.HIGH)
+        GPIO.output(self.In2, GPIO.LOW)
+        self.pwm.ChangeDutyCycle(x)
+        time.sleep(t)
+    
+    def moveB(self, x=50, t=0):
+        GPIO.output(self.In1, GPIO.LOW)
+        GPIO.output(self.In2, GPIO.HIGH)
+        self.pwm.ChangeDutyCycle(x)
+        time.sleep(t)
+    
+    def stop(self, t=0):
+        self.pwm.ChangeDutyCycle(0)
+        time.sleep(t)
+
+#Setting up the PID gains
+kp=0.05
+ki=0.01
+kd=0
+dt=0.1
+
+inte=0
+preve=0
+
+V_max =6
+RPM_t=[]
+
+M= Motor(13, 19, 26)
+RPM_d= 400
+OUT=0
+x_t= list(range(25))
+
+def PID_control(RPM_d, RPM, kp, ki, kd):
+    global inte, preve
+    
+    e= RPM_d-RPM
+    inte+=e*dt
+    deve=(e-preve)/dt
+    
+    output= kp*e + ki*inte + kd*deve
+    
+    preve=deve
+    
+    return output
+
+def calcul_RPM():
+    global counter, RPM_t
+    dt1=0
+    prev_time=time.time()
+    while dt1 < 1:
+        dt1= time.time()-prev_time
+    RPM= counter/20*60
+    RPM_t.append(RPM)
+    prev_time=time.time()  
+    print(RPM)
+    counter =0
+    return RPM
+
+def Motor_drive(output):
+    duty_cycle= min(100,abs(output)/V_max*100)
+    if output > 0:
+        M.moveF(duty_cycle)
+    else:
+        M.moveB(duty_cycle)
+        
+#Defining the motor functions
+i=0
+OUT_t=[]
+try:
+    while i<25:
+        RPM =  calcul_RPM()   
+        OUT= PID_control(RPM_d,RPM, kp, ki, kd)
+        OUT_t.append(OUT)
+        Motor_drive(OUT)
+        #duty_cycle= max(0,min(100,abs(OUT)/V_max*100))
+       # M.pwm.ChangeDutyCycle(duty_cycle)
+        print("{:<5} {:<5} {:<5}".format(RPM_d, RPM,OUT))
+        time.sleep(dt)
+        i+=1
+       
+    
+finally:
+    #plt.subplot(121)
+    plt.ylabel('rpm')
+    plt.plot( RPM_t)
+   # plt.subplot(122)
+    #plt.ylabel('OUT')
+    #plt.plot(OUT_t)
+    plt.show()
+    M.stop()
+    GPIO.cleanup()
+       
+    
+        
